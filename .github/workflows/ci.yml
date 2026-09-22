@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install playwright
+        run: npm install playwright && npx playwright install --with-deps chromium
+
+      - name: Generate the sample exports
+        run: python3 tools/make_sample.py --years 3 --out sample
+
+      - name: Parser
+        run: node tests/parser-test.mjs sample
+
+      - name: Check index.html is up to date with src/
+        run: |
+          python3 build.py -o /tmp/index.html
+          diff -q index.html /tmp/index.html || {
+            echo "index.html is stale -- run python3 build.py and commit the result"
+            exit 1
+          }
+
+      - name: End to end
+        run: node tests/e2e.mjs sample
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: test-output/
