@@ -1,0 +1,9 @@
+# vendored upstream data (re-fetch with tools/fetch_data.py)
+vendor/
+# build output is committed; local scratch is not
+scratch/
+*.tgz
+node_modules/
+__pycache__/
+.DS_Store
+test-output/
