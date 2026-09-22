@@ -57,6 +57,8 @@ function createMap(canvas, basemap) {
   const glowCtx = glowCanvas.getContext('2d');
   const lineCanvas = document.createElement('canvas');
   const lineCtx = lineCanvas.getContext('2d');
+  const arcCanvas = document.createElement('canvas');
+  const arcCtx = arcCanvas.getContext('2d');
 
   const view = { x: 0, y: 0, scale: 256, width: 1, height: 1, dpr: 1 };
   const state = {
@@ -91,7 +93,7 @@ function createMap(canvas, basemap) {
     view.width = width;
     view.height = height;
     view.dpr = dpr;
-    for (const c of [canvas, baseCanvas, glowCanvas, lineCanvas]) {
+    for (const c of [canvas, baseCanvas, glowCanvas, lineCanvas, arcCanvas]) {
       c.width = width;
       c.height = height;
     }
@@ -277,16 +279,20 @@ function createMap(canvas, basemap) {
 
   /* -------------------------------------------------------- flight arcs */
 
-  function drawArcs(target) {
+  /** Arcs go onto their own canvas and are blended in once. Drawing them
+   *  straight onto the map with additive blending turns a route flown fifty
+   *  times into a white line; this way it just gets solid. */
+  function drawArcs() {
+    arcCtx.clearRect(0, 0, view.width, view.height);
     if (!state.showArcs || !state.arcs.length || !state.range) return;
     const range = state.range;
+    const target = arcCtx;
     target.save();
-    target.globalCompositeOperation = 'lighter';
     target.lineWidth = Math.max(1, view.dpr * 0.8);
     for (const arc of state.arcs) {
       if (arc.t < range.t0 || arc.t > range.t1) continue;
       target.strokeStyle = rampCss(arc.shade);
-      target.globalAlpha = 0.2 + 0.16 * arc.weight;
+      target.globalAlpha = 0.16 + 0.16 * arc.weight;
       // An arc that crosses the date line is stored as two paths.
       for (const path of arc.paths) {
         let visible = false;
@@ -337,7 +343,11 @@ function createMap(canvas, basemap) {
         ctx.globalAlpha = 1;
       }
     }
-    drawArcs(ctx);
+    drawArcs();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.95;
+    ctx.drawImage(arcCanvas, 0, 0);
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
 

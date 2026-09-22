@@ -26,13 +26,11 @@ function show(node, visible) {
 
 /* ---------------------------------------------------------- loading */
 
-function startWorker(file) {
-  if (app.worker) app.worker.terminate();
-  const blob = new Blob([PARSER_SOURCE], { type: 'text/javascript' });
-  const url = URL.createObjectURL(blob);
-  const worker = new Worker(url);
-  app.worker = worker;
-  URL.revokeObjectURL(url);
+function parse(file) {
+  if (app.worker) {
+    app.worker.terminate();
+    app.worker = null;
+  }
 
   const status = $('status');
   const bar = $('progress-bar');
@@ -40,8 +38,14 @@ function startWorker(file) {
   show($('loader'), true);
   $('error').hidden = true;
 
-  worker.onmessage = (event) => {
-    const message = event.data;
+  const fail = (message) => {
+    show($('loader'), false);
+    const error = $('error');
+    error.textContent = message;
+    error.hidden = false;
+  };
+
+  const handle = (message) => {
     if (message.type === 'progress') {
       const fraction = message.total ? message.loaded / message.total : 0;
       bar.style.width = (message.phase === 'sorting' ? 100 : fraction * 96) + '%';
@@ -50,23 +54,45 @@ function startWorker(file) {
         : `Reading ${file.name} — ${(message.loaded / 1048576).toFixed(0)} of ` +
           `${(message.total / 1048576).toFixed(0)} MB, ${formatCount(message.points || 0)} points`;
     } else if (message.type === 'error') {
-      show($('loader'), false);
-      const error = $('error');
-      error.textContent = message.message;
-      error.hidden = false;
+      fail(message.message);
     } else if (message.type === 'done') {
       bar.style.width = '100%';
       status.textContent = 'Drawing…';
       setTimeout(() => finish(message, file), 16);
     }
   };
-  worker.onerror = (event) => {
-    show($('loader'), false);
-    const error = $('error');
-    error.textContent = 'The parser failed: ' + (event.message || 'unknown error');
-    error.hidden = false;
-  };
-  worker.postMessage({ file: file });
+
+  let worker = null;
+  try {
+    const blob = new Blob([PARSER_SOURCE], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    worker = new Worker(url);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    worker = null;
+  }
+
+  if (worker) {
+    app.worker = worker;
+    worker.onmessage = (event) => handle(event.data);
+    worker.onerror = (event) => fail('The parser failed: ' + (event.message || 'unknown error'));
+    worker.postMessage({ file: file });
+    return;
+  }
+
+  // Some browsers refuse to start a worker from a blob on a file:// page.
+  // Run the same parser on this thread instead: the page freezes while it
+  // reads, but it still works.
+  status.textContent = 'Reading (this browser will not run the parser in the background)…';
+  setTimeout(() => {
+    const scope = {};
+    try {
+      new Function('self', 'postMessage', PARSER_SOURCE)(scope, handle);
+      scope.onmessage({ data: { file: file } });
+    } catch (err) {
+      fail('Could not read that file: ' + (err && err.message ? err.message : err));
+    }
+  }, 32);
 }
 
 function finish(message, file) {
@@ -357,7 +383,7 @@ function init() {
 
   const input = $('file');
   input.addEventListener('change', () => {
-    if (input.files && input.files[0]) startWorker(input.files[0]);
+    if (input.files && input.files[0]) parse(input.files[0]);
   });
 
   const dropTarget = document.body;
@@ -372,7 +398,7 @@ function init() {
       event.preventDefault();
       if (type === 'drop') {
         const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-        if (file) startWorker(file);
+        if (file) parse(file);
       }
       document.body.classList.remove('dropping');
     });

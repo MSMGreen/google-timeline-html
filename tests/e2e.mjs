@@ -151,6 +151,22 @@ for (const file of CASES) {
   await context.close();
 }
 
+/* Some browsers refuse to start a worker from a blob on a file:// page.
+ * The page must still parse, on the main thread. */
+console.log('\nfallback when workers are unavailable');
+{
+  const context = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+  const page = await context.newPage();
+  await page.route(/^https?:\/\//, (route) => route.abort());
+  await page.addInitScript(() => { window.Worker = function () { throw new Error('blocked'); }; });
+  await page.goto('file://' + path.join(root, 'index.html'));
+  await page.setInputFiles('#file', path.join(sampleDir, 'Timeline.json'));
+  await page.waitForSelector('#results:not([hidden])', { timeout: 120000 });
+  const points = await page.evaluate(() => document.querySelector('#stats .stat-value').textContent);
+  check('parses on the main thread instead', /[0-9],[0-9]{3}/.test(points), points);
+  await context.close();
+}
+
 await browser.close();
 
 /* The four files describe the same three years. However differently they

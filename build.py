@@ -78,7 +78,11 @@ def main() -> int:
         out = ROOT / out
     build(out)
     size = out.stat().st_size
-    print(f"{out.relative_to(ROOT)}: {size / 1024:.0f} KiB")
+    try:
+        shown = out.relative_to(ROOT)
+    except ValueError:
+        shown = out
+    print(f"{shown}: {size / 1024:.0f} KiB")
     return 0
 
 
