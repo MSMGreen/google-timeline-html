@@ -23,6 +23,12 @@ ASSETS = ROOT / "assets"
 # Cities below this many inhabitants are dropped. 20k keeps the file small
 # while still naming anywhere most people actually sleep.
 MIN_POPULATION = 20_000
+# GeoNames feature codes worth keeping. PPLX in particular is a *district*
+# of a city -- without this filter a day in Barcelona gets labelled Eixample.
+CITY_FEATURE_CODES = {
+    "PPL", "PPLA", "PPLA2", "PPLA3", "PPLA4", "PPLA5", "PPLC",
+    "PPLF", "PPLG", "PPLL", "PPLR", "PPLS", "STLMT",
+}
 # Cities are stored at 1e-4 degrees, about 11 m -- far finer than we need to
 # pick the nearest town.
 CITY_PRECISION = 1e4
@@ -118,7 +124,7 @@ def read_cities_pbf(path: Path):
     while pos < end_of_file:
         length, pos = read_varint(buf, pos)
         end = pos + length
-        city = {"name": "", "country": "", "population": 0}
+        city = {"name": "", "country": "", "population": 0, "featureCode": ""}
         while pos < end:
             key, pos = read_varint(buf, pos)
             field, wire = key >> 3, key & 7
@@ -130,6 +136,8 @@ def read_cities_pbf(path: Path):
                     city["name"] = value
                 elif field == 3:
                     city["country"] = value
+                elif field == 7:
+                    city["featureCode"] = value
             elif wire == 0:
                 value, pos = read_varint(buf, pos)
                 if field == 9:
@@ -147,7 +155,7 @@ def read_cities_pbf(path: Path):
 def build_cities() -> dict:
     cities = [
         c for c in read_cities_pbf(VENDOR / "all-the-cities" / "cities.pbf")
-        if c["population"] >= MIN_POPULATION
+        if c["population"] >= MIN_POPULATION and c["featureCode"] in CITY_FEATURE_CODES
     ]
     # Sorting by longitude keeps the coordinate deltas small.
     cities.sort(key=lambda c: (round(c["lon"] * CITY_PRECISION), round(c["lat"] * CITY_PRECISION)))
